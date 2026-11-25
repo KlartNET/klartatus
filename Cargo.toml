@@ -1,0 +1,12 @@
+[package]
+name = "klartatus"
+version = "0.0.0"
+edition = "2024"
+
+[profile.release]
+lto = true
+opt-level = "z"
+strip = true
+
+[dependencies]
+sysinfo = { version = "0.33", default-features = false, features = ["system"] }
