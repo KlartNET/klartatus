@@ -1,10 +1,12 @@
 mod gpu;
 
-use std::io::{Read, Write};
-use std::net::{TcpListener};
+use std::io::{self, Read, Write};
+use std::net::TcpListener;
 use sysinfo::System;
 
 const BYTES_PER_GIB: f64 = 1024.0 * 1024.0 * 1024.0;
+const NOT_FOUND_RESPONSE: &[u8] = b"HTTP/1.1 404 Not Found\r\n\
+Connection: close\r\n\r\n";
 
 fn get_os_name() -> String {
 	System::long_os_version()
@@ -48,29 +50,39 @@ fn create_static_response() -> Vec<u8> {
 
 	let response = format!(
 		"HTTP/1.1 200 OK\r\n\
-		Access-Control-Allow-Origin: *\r\n\
-		Content-Type: application/json\r\n\
-		Connection: Close\r\n\r\n\
-		{{\"hostname\": \"{}\", \"os\": \"{}\", \"cpu\": \"{}\", \"gpu\": \"{}\", \"memory\": \"{}\", \"uptime\": ",
-		hostname, os, cpu, gpu, memory
+		Connection: close\r\n\
+		Cache-Control: max-age=31536000\r\n\
+		Cloudflare-CDN-Cache-Control: max-age=31536000\r\n\
+		Access-Control-Allow-Origin: https://klartnet.io\r\n\
+		Content-Type: application/json\r\n\r\n\
+		{}",
+		format!(
+			r#"{{"hostname": "{}", "os": "{}", "cpu": "{}", "gpu": "{}", "memory": "{}"}}"#,
+			hostname, os, cpu, gpu, memory
+		)
 	);
 
 	response.into_bytes()
 }
 
-fn main() -> std::io::Result<()> {
-	let static_part = create_static_response();
+fn main() -> io::Result<()> {
+	let static_response = create_static_response();
+
+
 	let listener = TcpListener::bind("[::]:9100")?;
 
-	println!("서버 시작됨: http://localhost:9100/");
+	println!("Server started: http://localhost:9100/");
+
+	let mut discard_buffer = [0u8; 4096];
 
 	for mut stream in listener.incoming().flatten() {
-		let mut discard_buffer = [0; 4096];
-		let _ = stream.read(&mut discard_buffer);
-
-		let _ = stream.write_all(&static_part);
-
-		let _ = write!(stream, "{}}}", System::uptime());
+		if let Ok(n) = stream.read(&mut discard_buffer) {
+			if discard_buffer[..n].starts_with(b"GET /spec.csv ") {
+				let _ = stream.write_all(&static_response);
+			} else {
+				let _ = stream.write_all(NOT_FOUND_RESPONSE);
+			}
+		}
 	}
 
 	Ok(())
