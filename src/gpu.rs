@@ -49,3 +49,24 @@ pub fn get_name() -> String {
 
 	"Unknown".to_string()
 }
+
+#[cfg(target_os = "macos")]
+pub fn get_name() -> String {
+	let output = Command::new("system_profiler")
+		.arg("SPDisplaysDataType")
+		.output();
+
+	if let Ok(out) = output {
+		for line in String::from_utf8_lossy(&out.stdout).lines() {
+			if let Some((_, val)) = line.split_once("Chipset Model:") {
+				let name = val.trim();
+
+				if !name.is_empty() {
+					return name.to_string();
+				}
+			}
+		}
+	}
+
+	"Unknown".to_string()
+}
